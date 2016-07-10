@@ -333,7 +333,10 @@ def write_graph2dot(graph, other_graphs, c_fname, img_fname,
         dot_path = write_dot_file(dot_str, img_fname)
     else:
         # dump using networkx and pydot
-        pydot_graph = nx.to_pydot(graph)
+        if hasattr(nx,"nx_pydot"):
+            pydot_graph = nx.nx_pydot.to_pydot(graph)
+        else:
+            pydot_graph = nx.to_pydot(graph)
         
         pydot_graph.set_splines('true')
         if layout == 'twopi':
