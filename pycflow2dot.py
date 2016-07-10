@@ -350,8 +350,16 @@ def write_graph2dot(graph, other_graphs, c_fname, img_fname, for_latex,
         dot_path = write_dot_file(dot_str, img_fname)
     else:
         # dump using networkx and pydot
+<<<<<<< HEAD
         pydot_graph = nx.drawing.nx_pydot.to_pydot(graph)
 
+=======
+        if hasattr(nx,"nx_pydot"):
+            pydot_graph = nx.nx_pydot.to_pydot(graph)
+        else:
+            pydot_graph = nx.to_pydot(graph)
+        
+>>>>>>> networkx.to_pydot method moves to networkx.nx_pydot.to_pydot.
         pydot_graph.set_splines('true')
         if layout == 'twopi':
             pydot_graph.set_ranksep(5)
