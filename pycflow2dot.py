@@ -86,8 +86,20 @@ def call_cflow(c_fname, cflow, numbered_nesting=True, preprocess=False):
 
     return cflow_data
 
+def call_cat(cfo_fname):
+    cat_cmd = ['/bin/cat']
 
-def cflow2dot_old(data, offset=False, filename=''):
+    cat_cmd += [cfo_fname]
+
+    dprint(2, 'cat command:\n\t' +str(cat_cmd) )
+
+    cat_data = subprocess.check_output(cat_cmd)
+    cat_data = bytes2str(cat_data)
+    dprint(2, 'cat returned:\n\n' + cat_data)
+
+    return cat_data
+
+def cflow2dot_old(data, offset=False, filename = ''):
     color = ['#eecc80', '#ccee80', '#80ccee', '#eecc80', '#80eecc']
     shape = ['box', 'ellipse', 'octagon', 'hexagon', 'diamond']
 
@@ -350,16 +362,11 @@ def write_graph2dot(graph, other_graphs, c_fname, img_fname, for_latex,
         dot_path = write_dot_file(dot_str, img_fname)
     else:
         # dump using networkx and pydot
-<<<<<<< HEAD
-        pydot_graph = nx.drawing.nx_pydot.to_pydot(graph)
-
-=======
         if hasattr(nx,"nx_pydot"):
             pydot_graph = nx.nx_pydot.to_pydot(graph)
         else:
             pydot_graph = nx.to_pydot(graph)
-        
->>>>>>> networkx.to_pydot method moves to networkx.nx_pydot.to_pydot.
+
         pydot_graph.set_splines('true')
         if layout == 'twopi':
             pydot_graph.set_ranksep(5)
@@ -461,6 +468,8 @@ def write_latex():
 def parse_args():
     parser = argparse.ArgumentParser()
 
+    parser.add_argument('-I', '--input-cflowed-filenames', nargs='+',
+                        help='filename(s) of cflow output files to be parsed.')
     parser.add_argument('-i', '--input-filenames', nargs='+',
                         help='filename(s) of C source code files to be parsed.')
     parser.add_argument('-o', '--output-filename', default='cflow',
@@ -484,7 +493,7 @@ def parse_args():
         help='graphviz layout algorithm.'
     )
     parser.add_argument(
-        '-x', '--exclude', default='',
+        '-x', '--excludes', nargs='+',
         help='file listing functions to ignore'
     )
     parser.add_argument(
@@ -515,20 +524,24 @@ def parse_args():
 
     return args
 
-
-def rm_excluded_funcs(list_fname, graphs):
+def rm_excluded_funcs(list_fnames, graphs):
     # nothing ignored ?
-    if not list_fname:
+    if not list_fnames:
         return
+    for list_fname in list_fnames:
+        # load list of ignored functions
+        rm_nodes = [line.strip() for line in open(list_fname).readlines() ]
 
-    # load list of ignored functions
-    rm_nodes = [line.strip() for line in open(list_fname).readlines()]
+        # remove comment lines and blank lines.
+        comment_ptn = r"^[ 	]*#"
+        reptn = re.compile(comment_ptn)
+        rm_nodes = filter((lambda x: not ((x == '') or (reptn.match(x)))), rm_nodes)
 
-    # delete them
-    for graph in graphs:
-        for node in rm_nodes:
-            if node in graph:
-                graph.remove_node(node)
+        # delete them
+        for graph in graphs:
+            for node in rm_nodes:
+                if node in graph:
+                    graph.remove_node(node)
 
 def add_included_calls(list_fname, graphs):
     # nothing included
@@ -574,7 +587,9 @@ def compute_nest_level(graphs):
 def main():
     """Run cflow, parse output, produce dot and compile it into pdf | svg."""
 
-    copyright_msg = 'cflow2dot'
+    copyright_msg = """
+    PyCflow2dot v0.2 - licensed under GNU GPL v3
+    """
     print(copyright_msg)
 
     # input
@@ -582,36 +597,42 @@ def main():
 
     args = parse_args()
 
-    c_fnames = args.input_filenames
+    cf_fnames = args.input_cflowed_filenames or []
+    c_fnames = args.input_filenames or []
     img_format = args.output_format
     for_latex = args.latex_svg
     multi_page = args.multi_page
     img_fname = args.output_filename
     preproc = args.preprocess
     layout = args.layout
-    exclude_list_fname = args.exclude
+    exclude_list_fnames = args.excludes or []
     include_calls_list_fname = args.include_calls
     merge_graphs = args.merge
     graph_label = not args.no_label
     main_node = not args.no_main
     no_src_lines = args.no_lines
 
-    dprint(0, 'C src files:\n\t' + str(c_fnames) + ", (extension '.c' omitted)\n"
-           + 'img fname:\n\t' + str(img_fname) + '.' + img_format + '\n'
-           + 'LaTeX export from Inkscape:\n\t' + str(for_latex) + '\n'
-           + 'Multi-page PDF:\n\t' + str(multi_page))
+    dprint(0, 'C src files:\n\t' +str(c_fnames) +", (extension '.c' omitted)\n"
+           +'img fname:\n\t' +str(img_fname) +'.' +img_format +'\n'
+           +'LaTeX export from Inkscape:\n\t' +str(for_latex) +'\n'
+           +'Multi-page PDF:\n\t' +str(multi_page) )
 
     cflow_strs = []
+    for cf_fname in cf_fnames:
+        cur_str = call_cat(cf_fname)
+        cflow_strs += [cur_str]
     for c_fname in c_fnames:
         cur_str = call_cflow(c_fname, cflow, numbered_nesting=True,
                              preprocess=preproc)
         cflow_strs += [cur_str]
 
     graphs = []
+    for cflow_out, cf_fname in zip(cflow_strs, cf_fnames):
+        cur_graph = cflow2nx(cflow_out, cf_fname)
+        graphs += [cur_graph]
     for cflow_out, c_fname in zip(cflow_strs, c_fnames):
         cur_graph = cflow2nx(cflow_out, c_fname)
         graphs += [cur_graph]
-
     # merge graphs
     if merge_graphs and len(graphs) > 1:
         accumulator = graphs[0]
@@ -619,12 +640,11 @@ def main():
             accumulator = nx.compose(accumulator, graph)
         graphs = [accumulator]
 
-    rm_excluded_funcs(exclude_list_fname, graphs)
+    rm_excluded_funcs(exclude_list_fnames, graphs)
     add_included_calls(include_calls_list_fname, graphs)
     compute_nest_level(graphs)
-    dot_paths = write_graphs2dot(graphs, c_fnames, img_fname, for_latex,
-                                 multi_page, layout, graph_label, main_node,
-                                 no_src_lines)
+    dot_paths = write_graphs2dot(graphs, cf_fnames + c_fnames, img_fname,
+                                 for_latex, multi_page, layout, graph_label, main_node, no_src_lines)
     dot2img(dot_paths, img_format, layout)
 
 if __name__ == "__main__":
