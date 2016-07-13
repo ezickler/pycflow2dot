@@ -407,17 +407,20 @@ def check_cflow_dot_availability():
         # use environment variable value if exists
         # or search by which command.
         if env_reqs[dependency] in os.environ:
-            path = os.environ[env_reqs[dependency]]
+            env_req = env_reqs[dependency]
+            path = os.environ[env_req]
+            path = bytes2str(path)
+            if not os.path.isfile(path):
+                raise Exception(dependency +' not found in spite of $' + env_req + '.')
         else:
             path = subprocess.check_output(['which', dependency] )
+            path = bytes2str(path)
+	    path = path.replace('\n', '')
+            if path.find(dependency) < 0 :
+                raise Exception(dependency +' not found in $PATH.')
 
-        path = bytes2str(path)
-        if path.find(dependency) < 0:
-            raise Exception(dependency + ' not found in $PATH.')
-        else:
-            path = path.replace('\n', '')
-            print('found ' + dependency + ' at: ' + path)
-            dep_paths += [path]
+        print('found ' +dependency +' at: ' +path)
+        dep_paths += [path]
 
     return dep_paths
 
