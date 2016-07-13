@@ -18,6 +18,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
+import os
 import sys
 import argparse
 import subprocess
@@ -81,10 +82,8 @@ def call_cflow(c_fname, cflow, numbered_nesting=True, preprocess=False):
     
     return cflow_data
 
-def call_cat(cfo_fname):
-    cat_cmd = ['/bin/cat']
-    
-    cat_cmd += [cfo_fname]
+def call_cat(cfo_fname, cat):
+    cat_cmd = [cat, cfo_fname]
     
     dprint(2, 'cat command:\n\t' +str(cat_cmd) )
     
@@ -379,13 +378,19 @@ def write_graphs2dot(graphs, c_fnames, img_fname, for_latex, multi_page, layout)
     return dot_paths
 
 def check_cflow_dot_availability():
-    required = ['cflow', 'dot']
+    required = ['cflow', 'dot', 'cat']
+    env_reqs = {'cflow':'CFLOW_CMD', 'dot':'DOT_CMD', 'cat':'CAT_CMD'}
     
     dep_paths = []
     for dependency in required:
-        path = subprocess.check_output(['which', dependency] )
+        # use environment variable value if exists
+        # or search by which command.
+        if env_reqs[dependency] in os.environ:
+            path = os.environ[env_reqs[dependency]]
+        else:
+            path = subprocess.check_output(['which', dependency] )
+            
         path = bytes2str(path)
-        
         if path.find(dependency) < 0:
             raise Exception(dependency +' not found in $PATH.')
         else:
@@ -514,7 +519,7 @@ def main():
     print(copyright_msg)
     
     # input
-    (cflow, dot) = check_cflow_dot_availability()
+    (cflow, dot, cat) = check_cflow_dot_availability()
     
     args = parse_args()
 
@@ -535,7 +540,7 @@ def main():
     
     cflow_strs = []
     for cf_fname in cf_fnames:
-        cur_str = call_cat(cf_fname)
+        cur_str = call_cat(cf_fname, cat)
         cflow_strs += [cur_str]
     for c_fname in c_fnames:
         cur_str = call_cflow(c_fname, cflow, numbered_nesting=True,
