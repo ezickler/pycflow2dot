@@ -369,11 +369,15 @@ def write_graphs2dot(graphs, c_fnames, img_fname, for_latex, multi_page, layout)
     for graph, c_fname in zip(graphs, c_fnames):
         other_graphs = list(graphs)
         other_graphs.remove(graph)
-        
-        cur_img_fname = img_fname +str(counter)
+
+        if img_fname == '@':
+            cur_img_fname = 'cflow_' + c_fname.replace('.', '_')
+        else:
+            cur_img_fname = img_fname + ('_%02u' % counter)
+            counter += 1
+            
         dot_paths += [write_graph2dot(graph, other_graphs, c_fname, cur_img_fname,
                                      for_latex, multi_page, layout) ]
-        counter += 1
     
     return dot_paths
 
@@ -463,9 +467,9 @@ def parse_args():
                         help='filename(s) of cflow output files to be parsed.')
     parser.add_argument('-i', '--input-filenames', nargs='+',
                         help='filename(s) of C source code files to be parsed.')
-    parser.add_argument('-o', '--output-filename', default='cflow',
+    parser.add_argument('-o', '--output-filename', default='@',
                         help='name of dot, svg, pdf etc file produced')
-    parser.add_argument('-f', '--output-format', default='svg',
+    parser.add_argument('-f', '--output-format', default='png',
                         choices=['dot', 'svg', 'pdf', 'png'],
                         help='output file format')
     parser.add_argument('-l', '--latex-svg', default=False, action='store_true',
