@@ -390,7 +390,7 @@ def write_graphs2dot(graphs, c_fnames, img_fname, for_latex, multi_page, layout,
         other_graphs.remove(graph)
 
         if img_fname == '@':
-            cur_img_fname = 'cflow_' + c_fname.replace('.', '_')
+            cur_img_fname = 'cflow_' + os.path.basename(c_fname).replace('.', '_')
         else:
             cur_img_fname = img_fname + ('_%04u' % counter)
             counter += 1
