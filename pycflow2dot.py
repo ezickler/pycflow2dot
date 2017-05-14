@@ -1,3 +1,4 @@
+#! /usr/bin/python
 # -*- coding: utf-8 -*-
 """Plot `cflow` output as graphs."""
 # Copyright 2013-2017 Ioannis Filippidis
@@ -17,7 +18,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-
 import os
 import sys
 import argparse
@@ -25,10 +25,13 @@ import subprocess
 import locale
 import re
 import networkx as nx
-try:
-    import pydot
-except:
-    pydot = None
+
+# Comment out for customizing shapes
+#     try:
+#         import pydot
+#     except:
+#         pydot = None
+pydot = None
 
 debug_msg_verbosity = 0
 
@@ -88,6 +91,7 @@ def call_cflow(c_fname, cflow, numbered_nesting=True, preprocess=False):
 
     return cflow_data
 
+
 def call_cat(cfo_fname, cat):
     cat_cmd = [cat, cfo_fname]
 
@@ -99,7 +103,7 @@ def call_cat(cfo_fname, cat):
 
     return cat_data
 
-def cflow2dot_old(data, offset=False, filename = ''):
+def cflow2dot_old(data, offset=False, filename=''):
     color = ['#eecc80', '#ccee80', '#80ccee', '#eecc80', '#80eecc']
     shape = ['box', 'ellipse', 'octagon', 'hexagon', 'diamond']
 
@@ -130,8 +134,7 @@ def cflow2dot_old(data, offset=False, filename = ''):
                 try:
                     pred_node
                 except NameError:
-                    raise Exception(
-                        'No predecessor node defined yet! Buggy...')
+                    raise Exception('No predecessor node defined yet! Buggy...')
 
                 # edge already seen ?
                 cur_edge = (pred_node, cur_node)
@@ -362,8 +365,9 @@ def write_graph2dot(graph, other_graphs, c_fname, img_fname, for_latex,
         dot_path = write_dot_file(dot_str, img_fname)
     else:
         # dump using networkx and pydot
-        if hasattr(nx,"nx_pydot"):
-            pydot_graph = nx.nx_pydot.to_pydot(graph)
+        if hasattr(nx, "nx_pydot"):
+            # pydot_graph = nx.nx_pydot.to_pydot(graph)
+            pydot_graph = nx.drawing.nx_pydot.to_pydot(graph)
         else:
             pydot_graph = nx.to_pydot(graph)
 
@@ -419,7 +423,7 @@ def check_cflow_dot_availability():
         else:
             path = subprocess.check_output(['which', dependency] )
             path = bytes2str(path)
-	    path = path.replace('\n', '')
+            path = path.replace('\n', '')
             if path.find(dependency) < 0 :
                 raise Exception(dependency +' not found in $PATH.')
 
@@ -487,7 +491,7 @@ def parse_args():
                         help='filename(s) of C source code files to be parsed.')
     parser.add_argument('-o', '--output-filename', default='@',
                         help='name of dot, svg, pdf etc file produced')
-    parser.add_argument('-f', '--output-format', default='png',
+    parser.add_argument('-f', '--output-format', default='svg',
                         choices=['dot', 'svg', 'pdf', 'png'],
                         help='output file format')
     parser.add_argument('-l', '--latex-svg', default=False, action='store_true',
@@ -507,7 +511,7 @@ def parse_args():
     )
     parser.add_argument(
         '-x', '--excludes', nargs='+',
-        help='file listing functions to ignore'
+        help='files listing functions to ignore'
     )
     parser.add_argument(
         '--include-calls', default='',
@@ -537,10 +541,13 @@ def parse_args():
 
     return args
 
+
 def rm_excluded_funcs(list_fnames, graphs):
     # nothing ignored ?
     if not list_fnames:
         return
+
+    # for each file that contains ignored functions
     for list_fname in list_fnames:
         # load list of ignored functions
         rm_nodes = [line.strip() for line in open(list_fname).readlines() ]
@@ -601,7 +608,7 @@ def main():
     """Run cflow, parse output, produce dot and compile it into pdf | svg."""
 
     copyright_msg = """
-    PyCflow2dot v0.2 - licensed under GNU GPL v3
+    pycflow2dot v0.2.1 - licensed under GNU GPL v3
     """
     print(copyright_msg)
 
@@ -625,10 +632,10 @@ def main():
     main_node = not args.no_main
     no_src_lines = args.no_lines
 
-    dprint(0, 'C src files:\n\t' +str(c_fnames) +", (extension '.c' omitted)\n"
-           +'img fname:\n\t' +str(img_fname) +'.' +img_format +'\n'
-           +'LaTeX export from Inkscape:\n\t' +str(for_latex) +'\n'
-           +'Multi-page PDF:\n\t' +str(multi_page) )
+    dprint(0, 'C src files:\n\t' + str(c_fnames) + ", (extension '.c' omitted)\n"
+           + 'img fname:\n\t' + str(img_fname) + '.' + img_format + '\n'
+           + 'LaTeX export from Inkscape:\n\t' + str(for_latex) + '\n'
+           + 'Multi-page PDF:\n\t' + str(multi_page))
 
     cflow_strs = []
     for cf_fname in cf_fnames:
