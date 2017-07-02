@@ -103,58 +103,6 @@ def call_cat(cfo_fname, cat):
 
     return cat_data
 
-def cflow2dot_old(data, offset=False, filename=''):
-    color = ['#eecc80', '#ccee80', '#80ccee', '#eecc80', '#80eecc']
-    shape = ['box', 'ellipse', 'octagon', 'hexagon', 'diamond']
-
-    dot = 'digraph G {\n'
-    dot += 'node [peripheries=2 style="filled,rounded" ' + \
-           'fontname="Vera Sans Mono" color="#eecc80"];\n'
-    dot += 'rankdir=LR;\n'
-    dot += 'label="' + filename + '"\n'
-    dot += 'main [shape=box];\n'
-
-    lines = data.replace('\r', '').split('\n')
-
-    max_space = get_max_space(lines)
-    nodes = set()
-    edges = set()
-    for i in range(0, max_space):
-        for j in range(0, len(lines)):
-            if lines[j].startswith((i + 1) * 4 * ' ') \
-                    and not lines[j].startswith((i + 2) * 4 * ' '):
-                cur_node = get_name(lines[j])
-
-                # node already seen ?
-                if cur_node not in nodes:
-                    nodes.add(cur_node)
-                    print('New Node: ' + cur_node)
-
-                # predecessor \exists ?
-                try:
-                    pred_node
-                except NameError:
-                    raise Exception('No predecessor node defined yet! Buggy...')
-
-                # edge already seen ?
-                cur_edge = (pred_node, cur_node)
-                if cur_edge not in edges:
-                    edges.add(cur_edge)
-                else:
-                    continue
-
-                dot += (('node [color="%s" shape=%s];edge [color="%s"];\n') % (
-                        color[i % 5], shape[i % 5], color[i % 5]))
-                dot += (pred_node + '->' + cur_node + '\n')
-            elif lines[j].startswith(i * 4 * ' '):
-                pred_node = get_name(lines[j])
-            else:
-                raise Exception('bug ?')
-    dot += '}\n'
-
-    dprint(2, 'dot dump str:\n\n' + dot)
-    return dot
-
 
 def cflow2nx(cflow_str, c_fname):
     lines = cflow_str.replace('\r', '').split('\n')
