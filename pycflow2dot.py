@@ -95,7 +95,7 @@ def call_cflow(c_fname, cflow, numbered_nesting=True, preprocess=False):
 def call_cat(cfo_fname, cat):
     cat_cmd = [cat, cfo_fname]
 
-    dprint(2, 'cat command:\n\t' +str(cat_cmd) )
+    dprint(2, 'cat command:\n\t' + str(cat_cmd) )
 
     cat_data = subprocess.check_output(cat_cmd)
     cat_data = bytes2str(cat_data)
@@ -433,13 +433,13 @@ def check_cflow_dot_availability():
     return dep_paths
 
 
-def dot2img(dot_paths, img_format, layout):
+def dot2img(dot_paths, img_format, layout, dot):
     print('This may take some time... ...')
     for dot_path in dot_paths:
         img_fname = str(dot_path)
         img_fname = img_fname.replace('.dot', '.' + img_format)
 
-        dot_cmd = [layout, '-T' + img_format, '-o', img_fname, dot_path]
+        dot_cmd = [dot, '-K' + layout, '-T' + img_format, '-o', img_fname, dot_path]
         dprint(1, dot_cmd)
 
         subprocess.check_call(dot_cmd)
@@ -665,7 +665,8 @@ def main():
     compute_nest_level(graphs)
     dot_paths = write_graphs2dot(graphs, cf_fnames + c_fnames, img_fname,
                                  for_latex, multi_page, layout, graph_label, main_node, no_src_lines)
-    dot2img(dot_paths, img_format, layout)
+
+    dot2img(dot_paths, img_format, layout, dot)
 
 if __name__ == "__main__":
     main()
