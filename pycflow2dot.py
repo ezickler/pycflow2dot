@@ -35,6 +35,11 @@ pydot = None
 
 debug_msg_verbosity = 0
 
+copyright_msg = """
+pycflow2dot v0.2.1 - licensed under GNU GPL v3
+"""
+
+
 
 def dprint(verbosity, s):
     """Debug mode printing."""
@@ -69,7 +74,7 @@ def get_name(line):
     return name
 
 
-def call_cflow(c_fname, cflow, numbered_nesting=True, preprocess=False):
+def call_cflow(c_fnames, cflow, numbered_nesting=True, preprocess=False):
     cflow_cmd = [cflow]
 
     if numbered_nesting:
@@ -81,7 +86,7 @@ def call_cflow(c_fname, cflow, numbered_nesting=True, preprocess=False):
     elif preprocess != False:
         cflow_cmd += ['--cpp=' + preprocess]
 
-    cflow_cmd += [c_fname]
+    cflow_cmd += c_fnames
 
     dprint(2, 'cflow command:\n\t' + str(cflow_cmd))
 
@@ -354,9 +359,15 @@ def write_graphs2dot(graphs, c_fnames, img_fname, for_latex, multi_page, layout,
     return dot_paths
 
 
-def check_cflow_dot_availability():
+def check_cflow_dot_availability(results_str):
     required = ['cflow', 'dot', 'cat']
     env_reqs = {'cflow':'CFLOW_CMD', 'dot':'DOT_CMD', 'cat':'CAT_CMD'}
+
+    if pydot is None:
+        shape_policy = 'original'
+    else:
+        shape_policy = 'pydot'
+    results_str += ['shape policy : ' + shape_policy]
 
     dep_paths = []
     for dependency in required:
@@ -375,23 +386,27 @@ def check_cflow_dot_availability():
             if path.find(dependency) < 0 :
                 raise Exception(dependency +' not found in $PATH.')
 
-        print('found ' +dependency +' at: ' +path)
+        results_str += [dependency + ' : ' + path]
         dep_paths += [path]
 
     return dep_paths
 
 
 def dot2img(dot_paths, img_format, layout, dot):
-    print('This may take some time... ...')
-    for dot_path in dot_paths:
-        img_fname = str(dot_path)
-        img_fname = img_fname.replace('.dot', '.' + img_format)
 
-        dot_cmd = [dot, '-K' + layout, '-T' + img_format, '-o', img_fname, dot_path]
-        dprint(1, dot_cmd)
+    print('start generating images [' + img_format + '] ... ...')
 
-        subprocess.check_call(dot_cmd)
-    print(img_format + ' produced successfully from dot.')
+    if img_format != 'dot':
+        for dot_path in dot_paths:
+            img_fname = str(dot_path)
+            img_fname = img_fname.replace('.dot', '.' + img_format)
+
+            dot_cmd = [dot, '-K' + layout, '-T' + img_format, '-o', img_fname, dot_path]
+            dprint(1, dot_cmd)
+
+            subprocess.check_call(dot_cmd)
+
+    print('completed.')
 
 
 def latex_preamble_str():
@@ -433,33 +448,35 @@ def write_latex():
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-I', '--input-cflowed-filenames', nargs='+',
-                        help='filename(s) of cflow output files to be parsed.')
     parser.add_argument('-i', '--input-filenames', nargs='+',
-                        help='filename(s) of C source code files to be parsed.')
+                        help='filename(s) of C source code files to be parsed.'
+    )
+    parser.add_argument('-b', '--bind-c-inputs', default=False, action='store_true',
+                        help='bind all C inputs.'
+    )
     parser.add_argument('-o', '--output-filename', default='@',
-                        help='name of dot, svg, pdf etc file produced')
+                        help='name of dot, svg, pdf etc file produced'
+    )
     parser.add_argument('-f', '--output-format', default='svg',
                         choices=['dot', 'svg', 'pdf', 'png'],
-                        help='output file format')
+                        help='output file format'
+    )
     parser.add_argument('-l', '--latex-svg', default=False, action='store_true',
-                        help='produce SVG for import to LaTeX via Inkscape')
+                        help='produce SVG for import to LaTeX via Inkscape'
+    )
     parser.add_argument('-m', '--multi-page', default=False, action='store_true',
                         help='produce hyperref links between function calls '
                               + 'and their definitions. Used for multi-page '
                               + 'PDF output, where each page is a different '
-                              + 'source file.')
+                              + 'source file.'
+    )
     parser.add_argument('-p', '--preprocess', default=False, nargs='?',
                         help='pass --cpp option to cflow, '
-                        + 'invoking C preprocessor, optionally with args.')
-    parser.add_argument(
-        '-g', '--layout', default='dot',
-        choices=['dot', 'neato', 'twopi', 'circo', 'fdp', 'sfdp'],
-        help='graphviz layout algorithm.'
+                        + 'invoking C preprocessor, optionally with args.'
     )
-    parser.add_argument(
-        '-x', '--excludes', nargs='+',
-        help='files listing functions to ignore'
+    parser.add_argument('-g', '--layout', default='dot',
+                        choices=['dot', 'neato', 'twopi', 'circo', 'fdp', 'sfdp'],
+                        help='graphviz layout algorithm.'
     )
     parser.add_argument(
         '--include-calls', default='',
@@ -481,11 +498,35 @@ def parse_args():
         '--no-lines', default=False, action='store_true',
         help='disable inclusion of function source line numbers'
     )
+    parser.add_argument('-x', '--excludes', nargs='+',
+                        help='files listing functions to ignore.'
+    )
+    parser.add_argument('-I', '--input-cflowed-filenames', nargs='+',
+                        help='filename(s) of cflow output files to be parsed.'
+    )
+    parser.add_argument('-k', '--keep-dot-files', default=False, action='store_true',
+                       help='keep dot files.'
+    )
+    parser.add_argument('-v', '--version', default=False, action='store_true',
+                        help='display version and settings.'
+    )
 
     if len(sys.argv) == 1:
         parser.print_help()
         sys.exit(1)
     args = parser.parse_args()
+
+    if args.input_cflowed_filenames and args.input_filenames:
+        print("Please specify either -I option or -i option.")
+        sys.exit(1)
+
+    if args.bind_c_inputs and not args.input_filenames:
+        print("Please specify -i option.")
+        sys.exit(1)
+
+    if args.bind_c_inputs and args.output_filename == '@':
+        print("Please specify -o option.")
+        sys.exit(1)
 
     return args
 
@@ -552,21 +593,63 @@ def compute_nest_level(graphs):
                 temp.remove_node(node)
             level += 1
 
+def do_version(avails_str):
+    print(copyright_msg)
+    print('---- environment ----')
+    for avail in avails_str:
+        print(avail)
+
+
+def do_cat(c_fnames, cat):
+    cflow_strs = []
+    for c_fname in c_fnames:
+        cur_str = call_cat(c_fname, cat)
+        cflow_strs += [cur_str]
+    return cflow_strs
+
+
+def do_cflow(c_fnames, cflow, preproc, bind_c_inputs):
+    if bind_c_inputs:
+        cur_str = call_cflow(c_fnames, cflow, numbered_nesting=True,
+                             preprocess=preproc)
+        cflow_strs = [cur_str]
+    else:
+        cflow_strs = []
+        for c_fname in c_fnames:
+            cur_str = call_cflow([c_fname], cflow, numbered_nesting=True,
+                                 preprocess=preproc)
+            cflow_strs += [cur_str]
+    return cflow_strs
+
+
+def do_post_process(dot_paths, img_format, keep_dots):
+    if keep_dots == False and img_format != 'dot':
+        for dot_path in dot_paths:
+            if os.path.isfile(dot_path):
+                os.remove(dot_path)
+
+
 def main():
     """Run cflow, parse output, produce dot and compile it into pdf | svg."""
 
-    copyright_msg = """
-    pycflow2dot v0.2.1 - licensed under GNU GPL v3
-    """
-    print(copyright_msg)
-
     # input
-    (cflow, dot, cat) = check_cflow_dot_availability()
+    results_str = []
+    (cflow, dot, cat) = check_cflow_dot_availability(results_str)
 
     args = parse_args()
 
-    cf_fnames = args.input_cflowed_filenames or []
+    if args.version:
+        do_version(results_str)
+        sys.exit(0)
+
+    input_is_cflowed = False
     c_fnames = args.input_filenames or []
+
+    if args.input_cflowed_filenames:
+        input_is_cflowed = True
+        c_fnames = args.input_cflowed_filenames or []
+
+    bind_c_inputs = args.bind_c_inputs
     img_format = args.output_format
     for_latex = args.latex_svg
     multi_page = args.multi_page
@@ -579,25 +662,21 @@ def main():
     graph_label = not args.no_label
     main_node = not args.no_main
     no_src_lines = args.no_lines
+    keep_dots = args.keep_dot_files
 
     dprint(0, 'C src files:\n\t' + str(c_fnames) + ", (extension '.c' omitted)\n"
            + 'img fname:\n\t' + str(img_fname) + '.' + img_format + '\n'
            + 'LaTeX export from Inkscape:\n\t' + str(for_latex) + '\n'
            + 'Multi-page PDF:\n\t' + str(multi_page))
 
-    cflow_strs = []
-    for cf_fname in cf_fnames:
-        cur_str = call_cat(cf_fname, cat)
-        cflow_strs += [cur_str]
-    for c_fname in c_fnames:
-        cur_str = call_cflow(c_fname, cflow, numbered_nesting=True,
-                             preprocess=preproc)
-        cflow_strs += [cur_str]
+    if input_is_cflowed:
+        cflow_strs = do_cat(c_fnames, cat)
+    else:
+        cflow_strs = do_cflow(c_fnames, cflow, preproc, bind_c_inputs)
+        if bind_c_inputs:
+            c_fnames = [img_fname + '_binded']
 
     graphs = []
-    for cflow_out, cf_fname in zip(cflow_strs, cf_fnames):
-        cur_graph = cflow2nx(cflow_out, cf_fname)
-        graphs += [cur_graph]
     for cflow_out, c_fname in zip(cflow_strs, c_fnames):
         cur_graph = cflow2nx(cflow_out, c_fname)
         graphs += [cur_graph]
@@ -611,10 +690,14 @@ def main():
     rm_excluded_funcs(exclude_list_fnames, graphs)
     add_included_calls(include_calls_list_fname, graphs)
     compute_nest_level(graphs)
-    dot_paths = write_graphs2dot(graphs, cf_fnames + c_fnames, img_fname,
+    dot_paths = write_graphs2dot(graphs, c_fnames, img_fname,
                                  for_latex, multi_page, layout, graph_label, main_node, no_src_lines)
 
     dot2img(dot_paths, img_format, layout, dot)
+
+    do_post_process(dot_paths, img_format, keep_dots)
+
+    sys.exit(0)
 
 if __name__ == "__main__":
     main()
