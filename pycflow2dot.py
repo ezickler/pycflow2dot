@@ -36,10 +36,15 @@ pydot = None
 debug_msg_verbosity = 0
 
 copyright_msg = """
-pycflow2dot v0.2.1 - licensed under GNU GPL v3
+pycflow2dot v0.2.2 - licensed under GNU GPL v3
 """
+# In small routine, fanin <= this limit and fanout <= this limit.
+FANX_SMALL_LIMIT = 3
 
-
+# Color Pattern
+# COLORS = ['#eecc80', '#ccee80', '#80ccee', '#ee80cc', '#cc80ee', '#80eecc']
+COLORS = ['#ffcc66', '#99ff66', '#66ffcc', '#6699ff', '#cc66ff', '#ff6699',
+          '#cc9966', '#99cc66', '#66cc99', '#6699cc', '#9966cc', '#cc6699']
 
 def dprint(verbosity, s):
     """Debug mode printing."""
@@ -124,11 +129,13 @@ def cflow2nx(cflow_str, c_fname):
         # defined in this file ?
         # apparently, this check is not needed: check this better
 
-        # get source line #
-        src_line_no = re.findall(':.*>', line)
-        if src_line_no != []:
-            src_line_no = int(src_line_no[0][1:-1])
+        # get file name and source line #
+        matches = re.findall(' ([^ ]*):(\d*)>', line)
+        if matches != []:
+            (src_file_name, src_line_no) = matches[0]
+            src_line_no = int(src_line_no)
         else:
+            src_file_name = ''
             src_line_no = -1
 
         # trim
@@ -149,7 +156,8 @@ def cflow2nx(cflow_str, c_fname):
 
         # not already seen ?
         if cur_node not in g:
-            g.add_node(cur_node, nest_level=nest_level, src_line=src_line_no)
+            g.add_node(cur_node, nest_level=nest_level,
+                       src_line=src_line_no, src_file=src_file_name)
             dprint(0, 'New Node: ' + cur_node)
 
         # not root node ?
@@ -188,30 +196,43 @@ def dot_preamble(c_fname, for_latex):
 
     dot_str = 'digraph G {\n'
     dot_str += 'node [peripheries=2 style="filled,rounded" ' + \
-        'fontname="Vera Sans Mono" color="#eecc80"];\n'
+        'fontname="Vera Sans Mono" color="' + COLORS[0] + '"];\n'
     dot_str += 'rankdir=LR;\n'
     dot_str += 'label="' + c_fname + '"\n'
-    dot_str += 'main [shape=box];\n'
+    dot_str += 'main [shape=invhouse];\n'
 
     return dot_str
 
 
-def choose_node_format(node, nest_level, src_line, defined_somewhere,
-                       for_latex, multi_page):
-    colors = ['#eecc80', '#ccee80', '#80ccee', '#eecc80', '#80eecc']
-    shapes = ['box', 'ellipse', 'octagon', 'hexagon', 'diamond']
+def choose_node_format(node, node_opts):
+
+    nest_level = node_opts['nest_level']
+    src_line = node_opts['src_line']
+    src_file = node_opts['src_file']
+    fanin = node_opts['fanin']
+    fanout = node_opts['fanout']
+
+    colors = COLORS
     sl = '\\\\'  # after fprintf \\ and after dot \, a single slash !
 
     # color, shape ?
     if nest_level == 0:
         color = colors[0]
-        shape = 'box'
+        shape = 'invhouse'
     else:
-        color = colors[(nest_level - 1) % 5]
-        shape = shapes[nest_level % 5]
+        color = colors[nest_level % len(colors)]
+        if fanout == 0:
+            shape = 'box'
+        elif fanin == 1 and fanout == 1:
+            shape = 'ellipse'
+        elif (fanin <= FANX_SMALL_LIMIT and
+              fanout <= FANX_SMALL_LIMIT):
+            shape = 'hexagon'
+        else:
+            shape = 'diamond'
 
     # fix underscores ?
-    if for_latex:
+    if node_opts['for_latex']:
         label = re.sub(r'_', r'\\\\_', node)
     else:
         label = node
@@ -219,19 +240,21 @@ def choose_node_format(node, nest_level, src_line, defined_somewhere,
 
     # src line of def here ?
     if src_line != -1:
-        if for_latex:
-            label = label + '\\n' + str(src_line)
-        else:
-            label = label + '\\n' + str(src_line)
+        label = label + '\\n'
+        if node_opts['bind_c_inputs']:
+            label += src_file + ':'
+        label += str(src_line)
+        label += ' [in=' + str(node_opts['fanin'])
+        label += ', out=' + str(node_opts['fanout']) + ']'
 
     # multi-page pdf ?
-    if multi_page:
+    if node_opts['multi_page']:
         if src_line != -1:
             # label
             label = sl + 'descitem{' + node + '}\\n' + label
         else:
             # link only if LaTeX label will appear somewhere
-            if defined_somewhere:
+            if node_opts['defined_somewhere']:
                 label = sl + 'descref[' + label + ']{' + node + '}'
 
     dprint(1, 'Node dot label:\n\t: ' + label)
@@ -239,11 +262,8 @@ def choose_node_format(node, nest_level, src_line, defined_somewhere,
     return (label, color, shape)
 
 
-def dot_format_node(node, nest_level, src_line, defined_somewhere,
-                    for_latex, multi_page):
-    (label, color, shape) = choose_node_format(node, nest_level, src_line,
-                                               defined_somewhere,
-                                               for_latex, multi_page)
+def dot_format_node(node, node_opts):
+    (label, color, shape) = choose_node_format(node, node_opts)
     dot_str = node
     dot_str += '[label="' + label + '" '
     dot_str += 'color="' + color + '" '
@@ -272,19 +292,34 @@ def node_defined_in_other_src(node, other_graphs):
     return defined_somewhere
 
 
-def dump_dot_wo_pydot(graph, other_graphs, c_fname, for_latex, multi_page):
-    dot_str = dot_preamble(c_fname, for_latex)
+def dump_dot_wo_pydot(graph, other_graphs, c_fname, graph_opts):
+    dot_str = dot_preamble(c_fname, graph_opts['for_latex'])
+
+    rgraph = graph.copy().reverse()
+    dprint(2, graph.edge)
+    dprint(2, rgraph.edge)
 
     for node in graph:
         node_dict = graph.node[node]
 
-        defined_somewhere = node_defined_in_other_src(node, other_graphs)
+        inflow_dict = rgraph.edge[node]
+        outflow_dict = graph.edge[node]
 
-        nest_level = node_dict['nest_level']
-        src_line = node_dict['src_line']
+        node_opts = {'nest_level' : node_dict['nest_level'],
+                     'src_line' : node_dict['src_line'],
+                     'src_file' : node_dict['src_file'],
+                     'defined_somewhere' : node_defined_in_other_src(node, other_graphs),
+                     'fanin' : len(inflow_dict),
+                     'fanout' : len(outflow_dict),
+                     'for_latex' : graph_opts['for_latex'],
+                     'multi_page' : graph_opts['multi_page'],
+                     'bind_c_inputs' : graph_opts['bind_c_inputs'] }
 
-        dot_str += dot_format_node(node, nest_level, src_line, defined_somewhere,
-                                   for_latex, multi_page)
+        dprint(2, 'node == ' + str(node_dict))
+        dprint(2, 'in  ==> ' + str(node_opts['fanin']) + ' ' + str(inflow_dict))
+        dprint(2, 'out ==> ' + str(node_opts['fanout']) + ' ' + str(outflow_dict))
+
+        dot_str += dot_format_node(node, node_opts)
 
     for from_node, to_node in graph.edges_iter():
         # call order affects edge color, so use only black
@@ -309,11 +344,9 @@ def write_dot_file(dot_str, dot_fname):
     return dot_path
 
 
-def write_graph2dot(graph, other_graphs, c_fname, img_fname,
-                    for_latex, multi_page, layout):
+def write_graph2dot(graph, other_graphs, c_fname, img_fname, graph_opts):
     if pydot is None:
-        dot_str = dump_dot_wo_pydot(graph, other_graphs, c_fname,
-                                    for_latex=for_latex, multi_page=multi_page)
+        dot_str = dump_dot_wo_pydot(graph, other_graphs, c_fname, graph_opts)
         dot_path = write_dot_file(dot_str, img_fname)
     else:
         # dump using networkx and pydot
@@ -337,7 +370,7 @@ def write_graph2dot(graph, other_graphs, c_fname, img_fname,
     return dot_path
 
 
-def write_graphs2dot(graphs, c_fnames, img_fname, for_latex, multi_page, layout):
+def write_graphs2dot(graphs, c_fnames, img_fname, graph_opts):
     dot_paths = []
     counter = 0
     for graph, c_fname in zip(graphs, c_fnames):
@@ -350,8 +383,7 @@ def write_graphs2dot(graphs, c_fnames, img_fname, for_latex, multi_page, layout)
             cur_img_fname = img_fname + ('_%04u' % counter)
             counter += 1
 
-        dot_paths += [write_graph2dot(graph, other_graphs, c_fname, cur_img_fname,
-                                      for_latex, multi_page, layout) ]
+        dot_paths += [write_graph2dot(graph, other_graphs, c_fname, cur_img_fname, graph_opts)]
 
     return dot_paths
 
@@ -615,8 +647,9 @@ def main():
 
     rm_excluded_funcs(exclude_list_fnames, graphs)
 
-    dot_paths = write_graphs2dot(graphs, c_fnames, img_fname,
-                                 for_latex, multi_page, layout)
+    graph_opts = {'for_latex' : for_latex, 'multi_page' : multi_page,
+                  'layout' : layout, 'bind_c_inputs' : bind_c_inputs}
+    dot_paths = write_graphs2dot(graphs, c_fnames, img_fname, graph_opts)
 
     dot2img(dot_paths, img_format, layout, dot)
 
