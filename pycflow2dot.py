@@ -33,23 +33,32 @@ import networkx as nx
 #         pydot = None
 pydot = None
 
-debug_msg_verbosity = 0
+one_time_count = False
 
-copyright_msg = """
-pycflow2dot v0.2.2 - licensed under GNU GPL v3
+DEBUG_MSG_VERBOSITY = 0
+
+COPYRIGHT_MSG = """
+pycflow2dot v0.2.3 - licensed under GNU GPL v3
 """
-# In small routine, fanin <= this limit and fanout <= this limit.
-FANX_SMALL_LIMIT = 3
+# In small size routine, fanout <= this limit.
+FANOUT_LOW_LIMIT = 3
+
+# In middle size routine, fanout <= this limit.
+FANOUT_MIDDLE_LIMIT = 9
 
 # Color Pattern
-# COLORS = ['#eecc80', '#ccee80', '#80ccee', '#ee80cc', '#cc80ee', '#80eecc']
 COLORS = ['#ffcc66', '#99ff66', '#66ffcc', '#6699ff', '#cc66ff', '#ff6699',
           '#cc9966', '#99cc66', '#66cc99', '#6699cc', '#9966cc', '#cc6699']
+
+# Anchor node names
+ANC_DEPTH = '_AnChOr_depth_'
+ANC_BOTTOM = '_AnChOr_bottom_'
+
 
 def dprint(verbosity, s):
     """Debug mode printing."""
     # TODO: make this a package
-    if verbosity < debug_msg_verbosity:
+    if verbosity < DEBUG_MSG_VERBOSITY:
         print(s)
 
 
@@ -105,7 +114,7 @@ def call_cflow(c_fnames, cflow, numbered_nesting=True, preprocess=False):
 def call_cat(cfo_fname, cat):
     cat_cmd = [cat, cfo_fname]
 
-    dprint(2, 'cat command:\n\t' + str(cat_cmd) )
+    dprint(2, 'cat command:\n\t' + str(cat_cmd))
 
     cat_data = subprocess.check_output(cat_cmd)
     cat_data = bytes2str(cat_data)
@@ -118,9 +127,10 @@ def cflow2nx(cflow_str, c_fname):
     lines = cflow_str.replace('\r', '').split('\n')
 
     g = nx.DiGraph()
+    g_depth = 0
     stack = dict()
     for line in lines:
-        #dprint(2, line)
+        # dprint(2, line)
 
         # empty line ?
         if line == '':
@@ -134,9 +144,11 @@ def cflow2nx(cflow_str, c_fname):
         if matches != []:
             (src_file_name, src_line_no) = matches[0]
             src_line_no = int(src_line_no)
+            in_this_file = True
         else:
             src_file_name = ''
             src_line_no = -1
+            in_this_file = False
 
         # trim
         s = re.sub(r'\(.*$', '', line)
@@ -148,6 +160,9 @@ def cflow2nx(cflow_str, c_fname):
         nest_level = int(nest_level)
         cur_node = is_reserved_by_dot(func_name)
 
+        if nest_level > g_depth:
+            g_depth = nest_level
+
         dprint(1, 'Found function:\n\t' + func_name
                + ',\n at depth:\n\t' + str(nest_level)
                + ',\n at src line:\n\t' + str(src_line_no))
@@ -157,7 +172,8 @@ def cflow2nx(cflow_str, c_fname):
         # not already seen ?
         if cur_node not in g:
             g.add_node(cur_node, nest_level=nest_level,
-                       src_line=src_line_no, src_file=src_file_name)
+                       src_line=src_line_no, src_file=src_file_name,
+                       in_this_file=in_this_file)
             dprint(0, 'New Node: ' + cur_node)
 
         # not root node ?
@@ -177,6 +193,7 @@ def cflow2nx(cflow_str, c_fname):
             g.add_edge(pred_node, cur_node)
             dprint(0, 'Found edge:\n\t' + pred_node + '--->' + cur_node)
 
+    g.graph['depth'] = g_depth
     return g
 
 
@@ -190,16 +207,30 @@ def is_reserved_by_dot(word):
     return word
 
 
-def dot_preamble(c_fname, for_latex):
+def dot_preamble(c_fname, graph_depth, for_latex):
     if for_latex:
         c_fname = re.sub(r'_', r'\\\\_', c_fname)
 
     dot_str = 'digraph G {\n'
+    dot_str += '// depth=' + str(graph_depth) + '\n'
     dot_str += 'node [peripheries=2 style="filled,rounded" ' + \
         'fontname="Vera Sans Mono" color="' + COLORS[0] + '"];\n'
     dot_str += 'rankdir=LR;\n'
     dot_str += 'label="' + c_fname + '"\n'
     dot_str += 'main [shape=invhouse];\n'
+
+    for i in range(0, graph_depth + 1):
+        dot_str += ANC_DEPTH + "%d " % i + \
+            '[fixedsize = true, width = 0.01, height = 0.01, ' + \
+                   'shape = point, color="#00000000"];\n'
+
+    dot_str += ANC_BOTTOM + \
+        '[fixedsize = true, width = 0.01, height = 0.01, ' + \
+        'shape = point, color="#00000000"];\n'
+
+    for i in range(0, graph_depth + 1):
+        dot_str += ANC_DEPTH + "%d -> " % i
+    dot_str += ANC_BOTTOM + ' [style=invis]\n'
 
     return dot_str
 
@@ -219,14 +250,18 @@ def choose_node_format(node, node_opts):
     if nest_level == 0:
         color = colors[0]
         shape = 'invhouse'
+    elif (not node_opts['in_this_file']) and src_line != -1:
+        color = colors[nest_level % len(colors)]
+        shape = 'house'
     else:
         color = colors[nest_level % len(colors)]
         if fanout == 0:
             shape = 'box'
         elif fanin == 1 and fanout == 1:
             shape = 'ellipse'
-        elif (fanin <= FANX_SMALL_LIMIT and
-              fanout <= FANX_SMALL_LIMIT):
+        elif (fanout <= FANOUT_LOW_LIMIT):
+            shape = 'octagon'
+        elif (fanout <= FANOUT_MIDDLE_LIMIT):
             shape = 'hexagon'
         else:
             shape = 'diamond'
@@ -241,11 +276,26 @@ def choose_node_format(node, node_opts):
     # src line of def here ?
     if src_line != -1:
         label = label + '\\n'
-        if node_opts['bind_c_inputs']:
+        if node_opts['bind_c_inputs'] or (not node_opts['in_this_file']):
             label += src_file + ':'
         label += str(src_line)
-        label += ' [in=' + str(node_opts['fanin'])
-        label += ', out=' + str(node_opts['fanout']) + ']'
+
+        label_in = ''
+        if node_opts['fanin'] != 0:
+            label_in = str(node_opts['fanin'])
+
+        label_out = ''
+        if node_opts['in_this_file']:
+            label_out = str(node_opts['fanout'])
+
+        if label_in != '' and label_out != '':
+            label += '\\n[in=' + label_in + ', out=' + label_out + ']'
+        elif label_in != '':
+            label += '\\n[in=' + label_in + ']'
+        elif label_out != '':
+            label += '\\n[out=' + label_out + ']'
+
+        # label += '\\ndepth=' + str(nest_level)
 
     # multi-page pdf ?
     if node_opts['multi_page']:
@@ -254,7 +304,7 @@ def choose_node_format(node, node_opts):
             label = sl + 'descitem{' + node + '}\\n' + label
         else:
             # link only if LaTeX label will appear somewhere
-            if node_opts['defined_somewhere']:
+            if not node_opts['in_this_file']:
                 label = sl + 'descref[' + label + ']{' + node + '}'
 
     dprint(1, 'Node dot label:\n\t: ' + label)
@@ -267,64 +317,104 @@ def dot_format_node(node, node_opts):
     dot_str = node
     dot_str += '[label="' + label + '" '
     dot_str += 'color="' + color + '" '
-    dot_str += 'shape=' + shape + '];\n\n'
+    dot_str += 'shape=' + shape + '];\n'
 
     return dot_str
 
 
 def dot_format_edge(from_node, to_node, color):
-    dot_str = 'edge [color="' + color + '"];\n\n'
+    dot_str = 'edge [color="' + color + '"];\n'
     dot_str += from_node + '->' + to_node + '\n'
 
     return dot_str
 
 
-def node_defined_in_other_src(node, other_graphs):
-    defined_somewhere = False
+def where_defined_at(node, this_graph, graphs):
+    in_this_file = this_graph.node[node]['in_this_file']
+    src_file = this_graph.node[node]['src_file']
+    src_line = this_graph.node[node]['src_line']
 
-    for graph in other_graphs:
+    if in_this_file:
+        return (in_this_file, src_file, src_line)
+
+    for graph in graphs:
+        if graph == this_graph:
+            continue
         if node in graph:
+            src_file = graph.node[node]['src_file']
             src_line = graph.node[node]['src_line']
+            break
 
-            if src_line != -1:
-                defined_somewhere = True
-
-    return defined_somewhere
+    return (in_this_file, src_file, src_line)
 
 
-def dump_dot_wo_pydot(graph, other_graphs, c_fname, graph_opts):
-    dot_str = dot_preamble(c_fname, graph_opts['for_latex'])
+def dump_dot_wo_pydot(graph, c_fname, graph_opts):
+    dot_str = dot_preamble(c_fname, graph.graph['depth'],
+                           graph_opts['for_latex'])
 
     rgraph = graph.copy().reverse()
     dprint(2, graph.edge)
     dprint(2, rgraph.edge)
 
+    excluded_nodes = []
     for node in graph:
         node_dict = graph.node[node]
-
         inflow_dict = rgraph.edge[node]
         outflow_dict = graph.edge[node]
 
-        node_opts = {'nest_level' : node_dict['nest_level'],
-                     'src_line' : node_dict['src_line'],
-                     'src_file' : node_dict['src_file'],
-                     'defined_somewhere' : node_defined_in_other_src(node, other_graphs),
-                     'fanin' : len(inflow_dict),
-                     'fanout' : len(outflow_dict),
-                     'for_latex' : graph_opts['for_latex'],
-                     'multi_page' : graph_opts['multi_page'],
-                     'bind_c_inputs' : graph_opts['bind_c_inputs'] }
+        node_opts = {'nest_level': node_dict['nest_level'],
+                     'src_line': node_dict['src_line'],
+                     'src_file': node_dict['src_file'],
+                     'in_this_file': node_dict['in_this_file'],
+                     'fanin': len(inflow_dict),
+                     'fanout': len(outflow_dict),
+                     'for_latex': graph_opts['for_latex'],
+                     'multi_page': graph_opts['multi_page'],
+                     'bind_c_inputs': graph_opts['bind_c_inputs']}
 
-        dprint(2, 'node == ' + str(node_dict))
-        dprint(2, 'in  ==> ' + str(node_opts['fanin']) + ' ' + str(inflow_dict))
-        dprint(2, 'out ==> ' + str(node_opts['fanout']) + ' ' + str(outflow_dict))
+        if graph_opts['exclude_all_extern'] and \
+           (node_dict['src_line'] == -1):
+            list.append(excluded_nodes, node)
+        else:
+            dprint(2, 'node == ' + str(node_dict))
+            dprint(2, 'in  ==> ' +
+                   str(node_opts['fanin']) + ' ' + str(inflow_dict))
+            dprint(2, 'out ==> ' +
+                   str(node_opts['fanout']) + ' ' + str(outflow_dict))
 
-        dot_str += dot_format_node(node, node_opts)
+            dot_str += dot_format_node(node, node_opts)
+
+    for node in excluded_nodes:
+        graph.remove_node(node)
 
     for from_node, to_node in graph.edges_iter():
         # call order affects edge color, so use only black
         color = '#000000'
         dot_str += dot_format_edge(from_node, to_node, color)
+
+    extern_nodes = []
+    nodes_by_nest = {}
+    for node in graph:
+        node_dict = graph.node[node]
+        nest_level = node_dict['nest_level']
+        src_line = node_dict['src_line']
+        if src_line == -1:
+            list.append(extern_nodes, node)
+        else:
+            if not nodes_by_nest.has_key(nest_level):
+                nodes_by_nest[nest_level] = []
+            list.append(nodes_by_nest[nest_level], node)
+
+    for k, nodes in nodes_by_nest.items():
+        dot_str += '{rank = same; ' + ANC_DEPTH + "%d; " % k
+        for node in nodes:
+            dot_str += node + '; '
+        dot_str += '}\n'
+
+    dot_str += '{rank = same; ' + ANC_BOTTOM + '; '
+    for node in extern_nodes:
+        dot_str += node + '; '
+    dot_str += '}\n'
 
     dot_str += '}\n'
     dprint(2, 'dot dump str:\n\n' + dot_str)
@@ -344,9 +434,9 @@ def write_dot_file(dot_str, dot_fname):
     return dot_path
 
 
-def write_graph2dot(graph, other_graphs, c_fname, img_fname, graph_opts):
+def write_graph2dot(graph, c_fname, img_fname, graph_opts):
     if pydot is None:
-        dot_str = dump_dot_wo_pydot(graph, other_graphs, c_fname, graph_opts)
+        dot_str = dump_dot_wo_pydot(graph, c_fname, graph_opts)
         dot_path = write_dot_file(dot_str, img_fname)
     else:
         # dump using networkx and pydot
@@ -374,23 +464,23 @@ def write_graphs2dot(graphs, c_fnames, img_fname, graph_opts):
     dot_paths = []
     counter = 0
     for graph, c_fname in zip(graphs, c_fnames):
-        other_graphs = list(graphs)
-        other_graphs.remove(graph)
 
         if img_fname == '@':
-            cur_img_fname = 'cflow_' + os.path.basename(c_fname).replace('.', '_')
+            cur_img_fname = 'cflow_' + \
+                            os.path.basename(c_fname).replace('.', '_')
         else:
             cur_img_fname = img_fname + ('_%04u' % counter)
             counter += 1
 
-        dot_paths += [write_graph2dot(graph, other_graphs, c_fname, cur_img_fname, graph_opts)]
+        dot_paths += [write_graph2dot(graph, c_fname, cur_img_fname,
+                                      graph_opts)]
 
     return dot_paths
 
 
 def check_cflow_dot_availability(results_str):
     required = ['cflow', 'dot', 'cat']
-    env_reqs = {'cflow':'CFLOW_CMD', 'dot':'DOT_CMD', 'cat':'CAT_CMD'}
+    env_reqs = {'cflow': 'CFLOW_CMD', 'dot': 'DOT_CMD', 'cat': 'CAT_CMD'}
 
     if pydot is None:
         shape_policy = 'original'
@@ -407,13 +497,15 @@ def check_cflow_dot_availability(results_str):
             path = os.environ[env_req]
             path = bytes2str(path)
             if not os.path.isfile(path):
-                raise Exception(dependency +' not found in spite of $' + env_req + '.')
+                raise Exception(dependency +
+                                ' not found in spite of $' + env_req + '.')
         else:
-            path = subprocess.check_output(['which', dependency] )
+            path = subprocess.check_output(['which', dependency])
             path = bytes2str(path)
             path = path.replace('\n', '')
-            if path.find(dependency) < 0 :
-                raise Exception(dependency +' not found in $PATH.')
+            if path.find(dependency) < 0:
+                raise Exception(dependency +
+                                ' not found in $PATH.')
 
         results_str += [dependency + ' : ' + path]
         dep_paths += [path]
@@ -430,7 +522,8 @@ def dot2img(dot_paths, img_format, layout, dot):
             img_fname = str(dot_path)
             img_fname = img_fname.replace('.dot', '.' + img_format)
 
-            dot_cmd = [dot, '-K' + layout, '-T' + img_format, '-o', img_fname, dot_path]
+            dot_cmd = [dot, '-K' + layout, '-T' + img_format,
+                       '-o', img_fname, dot_path]
             dprint(1, dot_cmd)
 
             subprocess.check_call(dot_cmd)
@@ -478,47 +571,44 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-i', '--input-filenames', nargs='+',
-                        help='filename(s) of C source code files to be parsed.'
-    )
-    parser.add_argument('-b', '--bind-c-inputs', default=False, action='store_true',
-                        help='bind all C inputs.'
-    )
+                        help='filename(s) of C source code files to be parsed.')
+    parser.add_argument('-b', '--bind-c-inputs', default=False,
+                        action='store_true',
+                        help='bind all C inputs.')
     parser.add_argument('-o', '--output-filename', default='@',
-                        help='name of dot, svg, pdf etc file produced'
-    )
+                        help='name of dot, svg, pdf etc file produced')
     parser.add_argument('-f', '--output-format', default='svg',
                         choices=['dot', 'svg', 'pdf', 'png'],
-                        help='output file format'
-    )
-    parser.add_argument('-l', '--latex-svg', default=False, action='store_true',
-                        help='produce SVG for import to LaTeX via Inkscape'
-    )
-    parser.add_argument('-m', '--multi-page', default=False, action='store_true',
+                        help='output file format')
+    parser.add_argument('-l', '--latex-svg', default=False,
+                        action='store_true',
+                        help='produce SVG for import to LaTeX via Inkscape')
+    parser.add_argument('-m', '--multi-page', default=False,
+                        action='store_true',
                         help='produce hyperref links between function calls '
                               + 'and their definitions. Used for multi-page '
                               + 'PDF output, where each page is a different '
-                              + 'source file.'
-    )
+                              + 'source file.')
     parser.add_argument('-p', '--preprocess', default=False, nargs='?',
                         help='pass --cpp option to cflow, '
-                        + 'invoking C preprocessor, optionally with args.'
-    )
+                        + 'invoking C preprocessor, optionally with args.')
     parser.add_argument('-g', '--layout', default='dot',
-                        choices=['dot', 'neato', 'twopi', 'circo', 'fdp', 'sfdp'],
-                        help='graphviz layout algorithm.'
-    )
+                        choices=[
+                            'dot', 'neato', 'twopi', 'circo', 'fdp', 'sfdp'],
+                        help='graphviz layout algorithm.')
     parser.add_argument('-x', '--excludes', nargs='+',
-                        help='files listing functions to ignore.'
-    )
+                        help='files listing functions to ignore.')
+    parser.add_argument('-X', '--excludes-all-externs', default=False,
+                        action='store_true',
+                        help='excludes all functions in external components.')
     parser.add_argument('-I', '--input-cflowed-filenames', nargs='+',
-                        help='filename(s) of cflow output files to be parsed.'
-    )
-    parser.add_argument('-k', '--keep-dot-files', default=False, action='store_true',
-                       help='keep dot files.'
-    )
-    parser.add_argument('-v', '--version', default=False, action='store_true',
-                        help='display version and settings.'
-    )
+                        help='filename(s) of cflow output files to be parsed.')
+    parser.add_argument('-k', '--keep-dot-files', default=False,
+                        action='store_true',
+                        help='keep dot files.')
+    parser.add_argument('-v', '--version', default=False,
+                        action='store_true',
+                        help='display version and settings.')
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -548,12 +638,13 @@ def rm_excluded_funcs(list_fnames, graphs):
     # for each file that contains ignored functions
     for list_fname in list_fnames:
         # load list of ignored functions
-        rm_nodes = [line.strip() for line in open(list_fname).readlines() ]
+        rm_nodes = [line.strip() for line in open(list_fname).readlines()]
 
         # remove comment lines and blank lines.
         comment_ptn = r"^[ 	]*#"
         reptn = re.compile(comment_ptn)
-        rm_nodes = filter((lambda x: not ((x == '') or (reptn.match(x)))), rm_nodes)
+        rm_nodes = filter(
+            (lambda x: not ((x == '') or (reptn.match(x)))), rm_nodes)
 
         # delete them
         for graph in graphs:
@@ -562,8 +653,22 @@ def rm_excluded_funcs(list_fnames, graphs):
                     graph.remove_node(node)
 
 
+def fix_cross_references(graphs):
+    in_this_file = False
+    src_file = ''
+    src_line = -1
+
+    for graph in graphs:
+        for node in graph:
+            (in_this_file, src_file, src_line) = where_defined_at(
+                node, graph, graphs)
+            if (not in_this_file) and src_line != -1:
+                graph.node[node]['src_file'] = src_file
+                graph.node[node]['src_line'] = src_line
+
+
 def do_version(avails_str):
-    print(copyright_msg)
+    print(COPYRIGHT_MSG)
     print('---- environment ----')
     for avail in avails_str:
         print(avail)
@@ -626,6 +731,7 @@ def main():
     preproc = args.preprocess
     layout = args.layout
     exclude_list_fnames = args.excludes or []
+    exclude_all_extern_nodes = args.excludes_all_externs
     keep_dots = args.keep_dot_files
 
     dprint(0, 'C src files:\n\t' + str(c_fnames) + ", (extension '.c' omitted)\n"
@@ -647,8 +753,11 @@ def main():
 
     rm_excluded_funcs(exclude_list_fnames, graphs)
 
-    graph_opts = {'for_latex' : for_latex, 'multi_page' : multi_page,
-                  'layout' : layout, 'bind_c_inputs' : bind_c_inputs}
+    fix_cross_references(graphs)
+
+    graph_opts = {'for_latex': for_latex, 'multi_page': multi_page,
+                  'layout': layout, 'bind_c_inputs': bind_c_inputs,
+                  'exclude_all_extern': exclude_all_extern_nodes}
     dot_paths = write_graphs2dot(graphs, c_fnames, img_fname, graph_opts)
 
     dot2img(dot_paths, img_format, layout, dot)
