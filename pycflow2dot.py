@@ -477,6 +477,11 @@ def parse_args():
         '-x', '--exclude', default='',
         help='file listing functions to ignore'
     )
+    parser.add_argument(
+        '--merge', default=False, action='store_true',
+        help='merge multiple call graphs into one'
+    )
+
     if len(sys.argv) == 1:
         parser.print_help()
         sys.exit(1)
@@ -499,6 +504,25 @@ def rm_excluded_funcs(list_fname, graphs):
             if node in graph:
                 graph.remove_node(node)
 
+def compute_nest_level(graphs):
+    for graph in graphs:
+        temp = graph.reverse()
+        level = 0
+        while len(temp) > 0:
+            found = False
+            # search for nodes with no incomming edges
+            for node, neighs in zip(temp.nodes(), temp.adjacency_list()):
+                if len(neighs) == 0:
+                    graph.node[node]['nest_level'] = level
+                    temp.remove_node(node)
+                    found = True
+            # when there are none we have a cycle
+            # pick the first node to try and break the cycle
+            if not found:
+                node = temp.nodes()[0]
+                graph[node]['nest_level'] = level
+                temp.remove_node(node)
+            level += 1
 
 def main():
     """Run cflow, parse output, produce dot and compile it into pdf | svg."""
@@ -519,6 +543,7 @@ def main():
     preproc = args.preprocess
     layout = args.layout
     exclude_list_fname = args.exclude
+    merge_graphs = args.merge
 
     dprint(0, 'C src files:\n\t' + str(c_fnames) + ", (extension '.c' omitted)\n"
            + 'img fname:\n\t' + str(img_fname) + '.' + img_format + '\n'
@@ -536,7 +561,15 @@ def main():
         cur_graph = cflow2nx(cflow_out, c_fname)
         graphs += [cur_graph]
 
+    # merge graphs
+    if merge_graphs and len(graphs) > 1:
+        accumulator = graphs[0]
+        for graph in graphs[1:]:
+            accumulator = nx.compose(accumulator, graph)
+        graphs = [accumulator]
+
     rm_excluded_funcs(exclude_list_fname, graphs)
+    compute_nest_level(graphs)
     dot_paths = write_graphs2dot(graphs, c_fnames, img_fname, for_latex,
                                  multi_page, layout)
     dot2img(dot_paths, img_format, layout)
