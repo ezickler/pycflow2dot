@@ -478,6 +478,10 @@ def parse_args():
         help='file listing functions to ignore'
     )
     parser.add_argument(
+        '--include-calls', default='',
+        help='file listing function calls to include'
+    )
+    parser.add_argument(
         '--merge', default=False, action='store_true',
         help='merge multiple call graphs into one'
     )
@@ -503,6 +507,27 @@ def rm_excluded_funcs(list_fname, graphs):
         for node in rm_nodes:
             if node in graph:
                 graph.remove_node(node)
+
+def add_included_calls(list_fname, graphs):
+    # nothing included
+    if not list_fname:
+        return
+
+    # add corresponding edges
+    with open(list_fname) as list_file:
+        for line in list_file:
+            funcs = line.split()
+
+            if len(funcs) != 2:
+                dprint(0, "file doesn't contain caller and callee")
+                continue
+
+            caller = funcs[0]
+            callee = funcs[1]
+
+            for graph in graphs:
+                if caller in graph and callee in graph:
+                    graph.add_edge(caller, callee)
 
 def compute_nest_level(graphs):
     for graph in graphs:
@@ -543,6 +568,7 @@ def main():
     preproc = args.preprocess
     layout = args.layout
     exclude_list_fname = args.exclude
+    include_calls_list_fname = args.include_calls
     merge_graphs = args.merge
 
     dprint(0, 'C src files:\n\t' + str(c_fnames) + ", (extension '.c' omitted)\n"
@@ -569,6 +595,7 @@ def main():
         graphs = [accumulator]
 
     rm_excluded_funcs(exclude_list_fname, graphs)
+    add_included_calls(include_calls_list_fname, graphs)
     compute_nest_level(graphs)
     dot_paths = write_graphs2dot(graphs, c_fnames, img_fname, for_latex,
                                  multi_page, layout)
