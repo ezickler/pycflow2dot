@@ -214,7 +214,7 @@ def is_reserved_by_dot(word):
     return word
 
 
-def dot_preamble(c_fname, for_latex, graph_label):
+def dot_preamble(c_fname, for_latex, graph_label, main_node):
     if for_latex:
         c_fname = re.sub(r'_', r'\\\\_', c_fname)
 
@@ -223,7 +223,7 @@ def dot_preamble(c_fname, for_latex, graph_label):
         'fontname="Vera Sans Mono" color="#eecc80"];\n'
     dot_str += 'rankdir=LR;\n'
     if graph_label: dot_str += 'label="' + c_fname + '"\n'
-    dot_str += 'main [shape=box];\n'
+    if main_node: dot_str += 'main [shape=box];\n'
 
     return dot_str
 
@@ -305,8 +305,8 @@ def node_defined_in_other_src(node, other_graphs):
 
 
 def dump_dot_wo_pydot(graph, other_graphs, c_fname, for_latex, multi_page,
-                      graph_label):
-    dot_str = dot_preamble(c_fname, for_latex, graph_label)
+                      graph_label, main_node):
+    dot_str = dot_preamble(c_fname, for_latex, graph_label, main_node)
 
     for node in graph:
         node_dict = graph.node[node]
@@ -343,11 +343,11 @@ def write_dot_file(dot_str, dot_fname):
 
 
 def write_graph2dot(graph, other_graphs, c_fname, img_fname,
-                    for_latex, multi_page, layout, graph_label):
+                    for_latex, multi_page, layout, graph_label, main_node):
     if pydot is None:
         print('Pydot not found. Exporting using pycflow2dot.write_dot_file().')
         dot_str = dump_dot_wo_pydot(graph, other_graphs, c_fname, for_latex,
-                                    multi_page, graph_label)
+                                    multi_page, graph_label, main_node)
         dot_path = write_dot_file(dot_str, img_fname)
     else:
         # dump using networkx and pydot
@@ -356,7 +356,7 @@ def write_graph2dot(graph, other_graphs, c_fname, img_fname,
         pydot_graph.set_splines('true')
         if layout == 'twopi':
             pydot_graph.set_ranksep(5)
-            pydot_graph.set_root('main')
+            if main_node: pydot_graph.set_root('main')
         else:
             pydot_graph.set_overlap(False)
             pydot_graph.set_rankdir('LR')
@@ -368,7 +368,7 @@ def write_graph2dot(graph, other_graphs, c_fname, img_fname,
 
 
 def write_graphs2dot(graphs, c_fnames, img_fname, for_latex, multi_page, layout,
-                     graph_label):
+                     graph_label, main_node):
     dot_paths = []
     counter = 0
     for graph, c_fname in zip(graphs, c_fnames):
@@ -377,7 +377,8 @@ def write_graphs2dot(graphs, c_fnames, img_fname, for_latex, multi_page, layout,
 
         cur_img_fname = img_fname + str(counter)
         dot_paths += [write_graph2dot(graph, other_graphs, c_fname, cur_img_fname,
-                                      for_latex, multi_page, layout, graph_label)]
+                                      for_latex, multi_page, layout, graph_label,
+                                      main_node)]
         counter += 1
 
     return dot_paths
@@ -483,6 +484,10 @@ def parse_args():
         '--no-label', default=False, action='store_true',
         help='disable generation of call graph caption'
     )
+    parser.add_argument(
+        '--no-main', default=False, action='store_true',
+        help='disable automatic addition of main function to call graph'
+    )
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -527,6 +532,7 @@ def main():
     layout = args.layout
     exclude_list_fname = args.exclude
     graph_label = not args.no_label
+    main_node = not args.no_main
 
     dprint(0, 'C src files:\n\t' + str(c_fnames) + ", (extension '.c' omitted)\n"
            + 'img fname:\n\t' + str(img_fname) + '.' + img_format + '\n'
@@ -546,7 +552,7 @@ def main():
 
     rm_excluded_funcs(exclude_list_fname, graphs)
     dot_paths = write_graphs2dot(graphs, c_fnames, img_fname, for_latex,
-                                 multi_page, layout, graph_label)
+                                 multi_page, layout, graph_label, main_node)
     dot2img(dot_paths, img_format, layout)
 
 if __name__ == "__main__":
