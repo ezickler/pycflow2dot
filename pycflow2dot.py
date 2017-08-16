@@ -373,7 +373,7 @@ def write_graphs2dot(graphs, c_fnames, img_fname, for_latex, multi_page, layout)
         other_graphs = list(graphs)
         other_graphs.remove(graph)
 
-        cur_img_fname = img_fname + str(counter)
+        cur_img_fname = img_fname + (str(counter) if len(graphs) > 1 else "")
         dot_paths += [write_graph2dot(graph, other_graphs, c_fname, cur_img_fname,
                                       for_latex, multi_page, layout)]
         counter += 1
