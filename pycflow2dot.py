@@ -229,7 +229,7 @@ def dot_preamble(c_fname, for_latex, graph_label, main_node):
 
 
 def choose_node_format(node, nest_level, src_line, defined_somewhere,
-                       for_latex, multi_page):
+                       for_latex, multi_page, no_src_lines):
     colors = ['#eecc80', '#ccee80', '#80ccee', '#eecc80', '#80eecc']
     shapes = ['box', 'ellipse', 'octagon', 'hexagon', 'diamond']
     sl = '\\\\'  # after fprintf \\ and after dot \, a single slash !
@@ -249,12 +249,9 @@ def choose_node_format(node, nest_level, src_line, defined_somewhere,
         label = node
     dprint(1, 'Label:\n\t: ' + label)
 
-    # src line of def here ?
-    if src_line != -1:
-        if for_latex:
-            label = label + '\\n' + str(src_line)
-        else:
-            label = label + '\\n' + str(src_line)
+    # src line of def here
+    if src_line != -1 and no_src_lines == False:
+        label = label + '\\n' + str(src_line)
 
     # multi-page pdf ?
     if multi_page:
@@ -272,10 +269,11 @@ def choose_node_format(node, nest_level, src_line, defined_somewhere,
 
 
 def dot_format_node(node, nest_level, src_line, defined_somewhere,
-                    for_latex, multi_page):
+                    for_latex, multi_page, no_src_lines):
     (label, color, shape) = choose_node_format(node, nest_level, src_line,
                                                defined_somewhere,
-                                               for_latex, multi_page)
+                                               for_latex, multi_page,
+                                               no_src_lines)
     dot_str = node
     dot_str += '[label="' + label + '" '
     dot_str += 'color="' + color + '" '
@@ -305,7 +303,7 @@ def node_defined_in_other_src(node, other_graphs):
 
 
 def dump_dot_wo_pydot(graph, other_graphs, c_fname, for_latex, multi_page,
-                      graph_label, main_node):
+                      graph_label, main_node, no_src_lines):
     dot_str = dot_preamble(c_fname, for_latex, graph_label, main_node)
 
     for node in graph:
@@ -317,7 +315,7 @@ def dump_dot_wo_pydot(graph, other_graphs, c_fname, for_latex, multi_page,
         src_line = node_dict['src_line']
 
         dot_str += dot_format_node(node, nest_level, src_line, defined_somewhere,
-                                   for_latex, multi_page)
+                                   for_latex, multi_page, no_src_lines)
 
     for from_node, to_node in graph.edges_iter():
         # call order affects edge color, so use only black
@@ -342,12 +340,13 @@ def write_dot_file(dot_str, dot_fname):
     return dot_path
 
 
-def write_graph2dot(graph, other_graphs, c_fname, img_fname,
-                    for_latex, multi_page, layout, graph_label, main_node):
+def write_graph2dot(graph, other_graphs, c_fname, img_fname, for_latex,
+                    multi_page, layout, graph_label, main_node, no_src_lines):
     if pydot is None:
         print('Pydot not found. Exporting using pycflow2dot.write_dot_file().')
         dot_str = dump_dot_wo_pydot(graph, other_graphs, c_fname, for_latex,
-                                    multi_page, graph_label, main_node)
+                                    multi_page, graph_label, main_node,
+                                    no_src_lines)
         dot_path = write_dot_file(dot_str, img_fname)
     else:
         # dump using networkx and pydot
@@ -368,7 +367,7 @@ def write_graph2dot(graph, other_graphs, c_fname, img_fname,
 
 
 def write_graphs2dot(graphs, c_fnames, img_fname, for_latex, multi_page, layout,
-                     graph_label, main_node):
+                     graph_label, main_node, no_src_lines):
     dot_paths = []
     counter = 0
     for graph, c_fname in zip(graphs, c_fnames):
@@ -378,7 +377,7 @@ def write_graphs2dot(graphs, c_fnames, img_fname, for_latex, multi_page, layout,
         cur_img_fname = img_fname + str(counter)
         dot_paths += [write_graph2dot(graph, other_graphs, c_fname, cur_img_fname,
                                       for_latex, multi_page, layout, graph_label,
-                                      main_node)]
+                                      main_node, no_src_lines)]
         counter += 1
 
     return dot_paths
@@ -488,6 +487,10 @@ def parse_args():
         '--no-main', default=False, action='store_true',
         help='disable automatic addition of main function to call graph'
     )
+    parser.add_argument(
+        '--no-lines', default=False, action='store_true',
+        help='disable inclusion of function source line numbers'
+    )
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -533,6 +536,7 @@ def main():
     exclude_list_fname = args.exclude
     graph_label = not args.no_label
     main_node = not args.no_main
+    no_src_lines = args.no_lines
 
     dprint(0, 'C src files:\n\t' + str(c_fnames) + ", (extension '.c' omitted)\n"
            + 'img fname:\n\t' + str(img_fname) + '.' + img_format + '\n'
@@ -552,7 +556,8 @@ def main():
 
     rm_excluded_funcs(exclude_list_fname, graphs)
     dot_paths = write_graphs2dot(graphs, c_fnames, img_fname, for_latex,
-                                 multi_page, layout, graph_label, main_node)
+                                 multi_page, layout, graph_label, main_node,
+                                 no_src_lines)
     dot2img(dot_paths, img_format, layout)
 
 if __name__ == "__main__":
