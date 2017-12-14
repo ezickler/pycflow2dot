@@ -25,13 +25,11 @@ import subprocess
 import locale
 import re
 import networkx as nx
+try:
+    import pydot
+except:
+    pydot = None
 
-# Comment out for customizing shapes
-#     try:
-#         import pydot
-#     except:
-#         pydot = None
-pydot = None
 
 one_time_count = False
 
@@ -459,7 +457,7 @@ def write_dot_file_with_pydot(pydot_graph, layout, img_fname):
 
 
 def write_graph2dot(graph, c_fname, img_fname, graph_opts):
-    if pydot is None:
+    if pydot is None or not graph_opts['use_pydot']:
         # dump using simple logic
         print('Pydot not found. Exporting using pycflow2dot.write_dot_file().')
         dot_str = dump_dot_wo_pydot(graph, c_fname, graph_opts)
@@ -470,7 +468,7 @@ def write_graph2dot(graph, c_fname, img_fname, graph_opts):
             pydot_graph = nx.drawing.nx_pydot.to_pydot(graph)
         else:
             pydot_graph = nx.to_pydot(graph)
-        dot_path = write_dot_file_with_pydot(pydot_graph)
+        dot_path = write_dot_file_with_pydot(pydot_graph, graph_opts['layout'], img_fname)
 
     return dot_path
 
@@ -645,6 +643,9 @@ def parse_args():
     parser.add_argument('-v', '--version', default=False,
                         action='store_true',
                         help='display version and settings.')
+    parser.add_argument('--use-pydot', default=False,
+                        action='store_true',
+                        help='use pydot to create dot file.')
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -820,15 +821,14 @@ def main():
     preproc = args.preprocess
     layout = args.layout
     exclude_list_fnames = args.excludes or []
-
     include_calls_list_fname = args.include_calls
     merge_graphs = args.merge
     graph_label = not args.no_label
     main_node = not args.no_main
     no_src_lines = args.no_lines
     exclude_all_extern_nodes = args.excludes_all_externs
-
     keep_dots = args.keep_dot_files
+    use_pydot = args.use_pydot
 
     dprint(0, 'C src files:\n\t' + str(c_fnames) +
            ", (extension '.c' omitted)\n" +
@@ -865,7 +865,7 @@ def main():
                   'layout': layout, 'bind_c_inputs': bind_c_inputs,
                   'exclude_all_extern': exclude_all_extern_nodes,
                   'graph_label' : graph_label, 'main_node' : main_node,
-                  'no_src_lines' : no_src_lines}
+                  'no_src_lines' : no_src_lines, 'use_pydot' : use_pydot}
     dot_paths = write_graphs2dot(graphs, c_fnames, img_fname, graph_opts)
 
     dot2img(dot_paths, img_format, layout, dot)
