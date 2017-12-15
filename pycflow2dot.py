@@ -319,7 +319,7 @@ def where_defined_at(node, this_graph, graphs):
     return (in_this_file, src_file, src_line)
 
 
-def dot_preamble(c_fname, graph_depth, for_latex, graph_label, main_node):
+def dot_preamble(c_fname, graph_depth, for_latex, graph_label, main_node, graph_topToBottom):
     if for_latex:
         c_fname = re.sub(r'_', r'\\\\_', c_fname)
 
@@ -327,7 +327,8 @@ def dot_preamble(c_fname, graph_depth, for_latex, graph_label, main_node):
     dot_str += '// depth=' + str(graph_depth) + '\n'
     dot_str += 'node [peripheries=2 style="filled,rounded" ' + \
         'fontname="Vera Sans Mono" color="' + COLORS[0] + '"];\n'
-    dot_str += 'rankdir=LR;\n'
+    if not graph_topToBottom:
+        dot_str += 'rankdir=LR;\n'
     if graph_label: dot_str += 'label="' + c_fname + '"\n'
     if main_node: dot_str += 'main [shape=box];\n'
 
@@ -420,7 +421,7 @@ def dump_dot_wo_pydot(graph, c_fname, graph_opts):
 
     dot_str = dot_preamble(c_fname, graph.graph['depth'],
                            graph_opts['for_latex'], graph_opts["graph_label"],
-                           graph_opts['main_node'])
+                           graph_opts['main_node'], graph_opts['graph_topToBottom'])
     dot_str += dot_graph(graph, c_fname, graph_opts)
     dot_str += dot_set_ranks(graph, c_fname, graph_opts)
     dot_str += dot_postamble()
@@ -647,6 +648,9 @@ def parse_args():
     parser.add_argument('--use-pydot', default=False,
                         action='store_true',
                         help='use pydot to create dot file.')
+    parser.add_argument('--topToBottom', default=False,
+                        action='store_true',
+                        help='prints a top to bottom graph instead of the left to right default.')
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -830,6 +834,7 @@ def main():
     exclude_all_extern_nodes = args.excludes_all_externs
     keep_dots = args.keep_dot_files
     use_pydot = args.use_pydot
+    graph_topToBottom = args.topToBottom
 
     dprint(0, 'C src files:\n\t' + str(c_fnames) +
            ", (extension '.c' omitted)\n" +
@@ -867,7 +872,7 @@ def main():
                   'exclude_all_extern': exclude_all_extern_nodes,
                   'graph_label' : graph_label, 'main_node' : main_node,
                   'no_src_lines' : no_src_lines, 'use_pydot' : use_pydot,
-                  'merge_graphs' : merge_graphs}
+                  'merge_graphs' : merge_graphs, 'graph_topToBottom' : graph_topToBottom}
     dot_paths = write_graphs2dot(graphs, c_fnames, img_fname, graph_opts)
 
     dot2img(dot_paths, img_format, layout, dot)
