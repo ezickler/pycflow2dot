@@ -246,7 +246,7 @@ def choose_node_format(node, node_opts):
     # src line of def here ?
     if src_line != -1:
         label = label + '\\n'
-        if node_opts['bind_c_inputs'] or (not node_opts['in_this_file']):
+        if node_opts['bind_c_inputs'] or (not node_opts['in_this_file']) or node_opts['merge_graphs']:
             label += src_file + ':'
         if node_opts['no_src_lines'] == False:
             label += str(src_line)
@@ -365,7 +365,8 @@ def dot_graph(graph, c_fname, graph_opts):
                      'for_latex': graph_opts['for_latex'],
                      'multi_page': graph_opts['multi_page'],
                      'bind_c_inputs': graph_opts['bind_c_inputs'],
-                     'no_src_lines' : graph_opts['no_src_lines'] }
+                     'no_src_lines' : graph_opts['no_src_lines'],
+                     'merge_graphs' : graph_opts['merge_graphs'] }
 
         dot_str += dot_format_node(node, node_opts)
 
@@ -865,7 +866,8 @@ def main():
                   'layout': layout, 'bind_c_inputs': bind_c_inputs,
                   'exclude_all_extern': exclude_all_extern_nodes,
                   'graph_label' : graph_label, 'main_node' : main_node,
-                  'no_src_lines' : no_src_lines, 'use_pydot' : use_pydot}
+                  'no_src_lines' : no_src_lines, 'use_pydot' : use_pydot,
+                  'merge_graphs' : merge_graphs}
     dot_paths = write_graphs2dot(graphs, c_fnames, img_fname, graph_opts)
 
     dot2img(dot_paths, img_format, layout, dot)
