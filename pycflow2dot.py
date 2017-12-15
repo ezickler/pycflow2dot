@@ -856,8 +856,12 @@ def main():
     # merge graphs
     if merge_graphs and len(graphs) > 1:
         accumulator = graphs[0]
+        accumulator_depth = accumulator.graph['depth']
         for graph in graphs[1:]:
+            accumulator_depth = max(graph.graph['depth'], accumulator_depth)
             accumulator = nx.compose(accumulator, graph)
+
+        accumulator.graph['depth'] = accumulator_depth
         graphs = [accumulator]
 
     rm_excluded_funcs(exclude_list_fnames, graphs)
